@@ -36,7 +36,7 @@ class PsScan(interfaces.plugins.PluginInterface):
             requirements.ModuleRequirement(
                 name="kernel",
                 description="Linux kernel",
-                architectures=["Intel32", "Intel64"],
+                architectures=["Intel32", "Intel64", "AArch64"],
             ),
         ]
 
