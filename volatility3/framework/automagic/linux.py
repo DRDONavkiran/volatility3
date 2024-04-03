@@ -368,7 +368,7 @@ class LinuxStacker(interfaces.automagic.StackerLayerInterface):
 
             # This we get for free
             aslr_shift = (
-                init_task.files.cast("long unsigned int")
+                init_task.files.cast("unsigned long")
                 - module.get_symbol("init_files").address
             )
             if layer_class == arm.AArch64:
