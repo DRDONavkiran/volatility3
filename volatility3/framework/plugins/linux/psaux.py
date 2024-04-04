@@ -3,6 +3,7 @@
 #
 
 from typing import Optional
+import chardet
 
 from volatility3.framework import exceptions, interfaces, renderers
 from volatility3.framework.configuration import requirements
@@ -77,7 +78,20 @@ class PsAux(plugins.PluginInterface):
                 return renderers.UnreadableValue()
 
             # the arguments are null byte terminated, replace the nulls with spaces
-            s = argv.decode().split("\x00")
+            try:
+                _res = chardet.detect(argv)
+                if _res["encoding"]:
+                    s = argv.decode(_res["encoding"]).split("\\x00")
+                else:
+                    s = argv.decode("utf-8", errors="replace").split("\\x00")
+            except UnicodeDecodeError:
+                # If the detected encoding fails, try a fallback encoding
+                try:
+                    s = argv.decode("latin-1").split("\\x00")
+                except UnicodeDecodeError:
+                    # If the fallback encoding also fails, replace invalid bytes
+                    s = argv.decode("utf-8", errors="replace").split("\\x00")
+
             args = " ".join(s)
         else:
             # kernel thread
