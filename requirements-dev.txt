@@ -7,3 +7,6 @@ jsonschema>=2.3.0
 # Used to build executable file
 pyinstaller>=6.5.0
 pyinstaller-hooks-contrib>=2024.3
+
+# This is required by psaux
+chardet
