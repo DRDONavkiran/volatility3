@@ -217,6 +217,7 @@ class LinuxStacker(interfaces.automagic.StackerLayerInterface):
 
         linux_banner_address = table.get_symbol("linux_banner").address + aslr_shift
         # Linux source : v6.7/source/arch/arm64/include/asm/memory.h#L186 - v5.7/source/arch/arm64/include/asm/memory.h#L160
+        va_bits = 0
         if "vabits_actual" in table.symbols:
             vabits_actual_phys_addr = (
                 table.get_symbol("vabits_actual").address + kaslr_shift
@@ -226,7 +227,7 @@ class LinuxStacker(interfaces.automagic.StackerLayerInterface):
                 context.layers[layer_name].read(vabits_actual_phys_addr, 8),
                 kernel_endianness,
             )
-        else:
+        if not va_bits:
             """
             Count leftmost bits equal to 1, deduce number of used bits for virtual addressing.
             Example :
@@ -318,8 +319,9 @@ class LinuxStacker(interfaces.automagic.StackerLayerInterface):
             return False
 
         if not banner_value == target_banner:
-            vollog.error(
-                f"Mismatch between scanned and virtually translated linux banner : {target_banner} != {banner_value}."
+            vollog.log(
+                constants.LOGLEVEL_VV,
+                f"Mismatch between scanned and virtually translated linux banner : {target_banner} != {banner_value}.",
             )
             return False
 
