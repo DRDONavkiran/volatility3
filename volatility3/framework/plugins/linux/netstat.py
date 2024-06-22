@@ -8,6 +8,7 @@ from volatility3.framework.objects import utility
 from volatility3.framework.renderers import format_hints
 from volatility3.framework.symbols import linux
 from volatility3.plugins.linux import pslist
+from volatility3.plugins.linux import lsof
 
 vollog = logging.getLogger(__name__)
 
@@ -29,7 +30,7 @@ class Netstat(plugins.PluginInterface):
                 name="pslist", plugin=pslist.PsList, version=(2, 0, 0)
             ),
             requirements.VersionRequirement(
-                name="linuxutils", component=linux.LinuxUtilities, version=(2, 0, 0)
+                name="linuxutils", component=linux.LinuxUtilities, version=(2, 1, 0)
             ),
             requirements.ListRequirement(
                 name="pid",
@@ -63,6 +64,33 @@ class Netstat(plugins.PluginInterface):
         """
         # This is hardcoded, since a change in the default method would change the expected results
         linuxutils_symbol_table = None  # type: ignore
+        vmlinux = context.modules[kernel_module_name]
+
+        sfop_addr = vmlinux.object_from_symbol("socket_file_ops").vol.offset
+        dfop_addr = vmlinux.object_from_symbol("sockfs_dentry_operations").vol.offset
+
+        fd_generator = lsof.Lsof.list_fds(context, vmlinux.name, filter_func)
+
+        for _pid, _task_comm, task, fd_fields in fd_generator:
+            fd_num, filp, _full_path = fd_fields
+
+            if filp.f_op not in (sfop_addr, dfop_addr):
+                continue
+
+            dentry = filp.get_dentry()
+            if not dentry:
+                continue
+
+            d_inode = dentry.d_inode
+            if not d_inode:
+                continue
+
+            socket_alloc = linux.LinuxUtilities.container_of(
+                d_inode, "socket_alloc", "vfs_inode", vmlinux
+            )
+            socket = socket_alloc.socket
+
+
         for task in pslist.PsList.list_tasks(context, kernel_module_name, filter_func):
             
             if linuxutils_symbol_table is None:
@@ -73,26 +101,9 @@ class Netstat(plugins.PluginInterface):
             task_name = utility.array_to_string(task.comm)
             pid = int(task.pid)
 
-            for filp, _, _ in linux.LinuxUtilities.files_descriptors_for_process(
+            for _, filp, _ in linux.LinuxUtilities.files_descriptors_for_process(
                 context, linuxutils_symbol_table, task
             ):
-                try:
-                    ftype = filp.f_fglob.get_fg_type()
-                except exceptions.InvalidAddressException:
-                    continue
-
-                if ftype != "SOCKET":
-                    continue
-
-                try:
-                    socket = filp.f_fglob.fg_data.dereference().cast("socket")
-                except exceptions.InvalidAddressException:
-                    continue
-
-                if not context.layers[task.vol.native_layer_name].is_valid(
-                    socket.vol.offset, socket.vol.size
-                ):
-                    continue
 
                 yield task_name, pid, socket
 
