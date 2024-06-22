@@ -89,6 +89,10 @@ class Netstat(plugins.PluginInterface):
                 d_inode, "socket_alloc", "vfs_inode", vmlinux
             )
             socket = socket_alloc.socket
+            try:
+                socket = socket.dereference().cast("socket")
+            except exceptions.InvalidAddressException:
+                continue
 
 
         for task in pslist.PsList.list_tasks(context, kernel_module_name, filter_func):
@@ -104,6 +108,10 @@ class Netstat(plugins.PluginInterface):
             for _, filp, _ in linux.LinuxUtilities.files_descriptors_for_process(
                 context, linuxutils_symbol_table, task
             ):
+                if not context.layers[task.vol.native_layer_name].is_valid(
+                    socket.vol.offset, socket.vol.size
+                ):
+                    continue
 
                 yield task_name, pid, socket
 
