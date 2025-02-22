@@ -16,9 +16,8 @@ from volatility3.plugins import timeliner
 
 vollog = logging.getLogger(__name__)
 
-
 class Lsof(plugins.PluginInterface, timeliner.TimeLinerInterface):
-    """Lists open files for each processes."""
+    """Lists open files for each process."""
 
     _required_framework_version = (2, 0, 0)
     _version = (1, 2, 0)
@@ -65,7 +64,7 @@ class Lsof(plugins.PluginInterface, timeliner.TimeLinerInterface):
                         inode_object.get_access_time(),
                     )
         except (exceptions.InvalidAddressException, AttributeError) as e:
-            vollog.warning(f"Can't get inode metadata: {e}")
+            vollog.debug(f"Failed to get inode metadata: {e}")
         return None
 
     @classmethod
@@ -85,12 +84,15 @@ class Lsof(plugins.PluginInterface, timeliner.TimeLinerInterface):
             task_comm = utility.array_to_string(task.comm)
             pid = int(task.pid)
 
-            fd_generator = linux.LinuxUtilities.files_descriptors_for_process(
-                context, linuxutils_symbol_table, task
-            )
-
-            for fd_fields in fd_generator:
-                yield pid, task_comm, task, fd_fields
+            try:
+                fd_generator = linux.LinuxUtilities.files_descriptors_for_process(
+                    context, linuxutils_symbol_table, task
+                )
+                for fd_fields in fd_generator:
+                    yield pid, task_comm, task, fd_fields
+            except exceptions.InvalidAddressException as e:
+                vollog.warning(f"Skipping file descriptors for PID {pid} ({task_comm}): {e}")
+                continue
 
     @classmethod
     def list_fds_and_inodes(
@@ -102,12 +104,19 @@ class Lsof(plugins.PluginInterface, timeliner.TimeLinerInterface):
         for pid, task_comm, task, (fd_num, filp, full_path) in cls.list_fds(
             context, symbol_table, filter_func
         ):
-            inode_metadata = cls.get_inode_metadata(filp)
-            if inode_metadata is None:
-                inode_metadata = tuple(
-                    interfaces.renderers.BaseAbsentValue() for _ in range(7)
+            try:
+                inode_metadata = cls.get_inode_metadata(filp)
+                if inode_metadata is None:
+                    inode_metadata = tuple(
+                        renderers.NotAvailableValue() for _ in range(7)
+                    )
+                yield pid, task_comm, task, fd_num, filp, full_path, inode_metadata
+            except exceptions.InvalidAddressException as e:
+                vollog.warning(f"Skipping inode data for PID {pid} FD {fd_num} ({full_path}): {e}")
+                # Yield partial data without inode metadata
+                yield pid, task_comm, task, fd_num, filp, full_path, tuple(
+                    renderers.NotAvailableValue() for _ in range(7)
                 )
-            yield pid, task_comm, task, fd_num, filp, full_path, inode_metadata
 
     def _generator(self, pids, symbol_table):
         filter_func = pslist.PsList.create_pid_filter(pids)
